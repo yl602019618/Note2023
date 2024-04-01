@@ -1,0 +1,148 @@
+\documentclass{article}
+\usepackage{CJK}
+\usepackage{amsmath,amssymb,graphicx}
+
+%%%%%%%%%% Start TeXmacs macros
+\newcommand{\nobracket}{}
+\newcommand{\tmaffiliation}[1]{\\ #1}
+\newcommand{\tmop}[1]{\ensuremath{\operatorname{#1}}}
+\newtheorem{theorem}{Theorem}
+%%%%%%%%%% End TeXmacs macros
+
+\begin{document}
+\begin{CJK*}{UTF8}{gbsn}
+
+\title{Soft Q-learning}
+
+\author{
+  Zhijun Zeng
+  \tmaffiliation{2023年9月18日}
+}
+
+\maketitle
+
+\section{最大化熵方法}
+
+在强化学习中，我们的目标是寻找一个策略，能够最大化环境中得到的回报，数学表示为
+\[ \pi^{\ast}_{\tmop{std}} = \tmop{argmax}_{\pi} \sum_t \mathbb{E}_{(s_t, a_t)
+   \sim \rho_{\pi}} [r (s_t, a_t)] \]
+这里$\pi_{\tmop{std}}^{\ast}$是传统RL中的到的最优策略，$\rho_{\pi}$为基于策略$\pi$决定的状态与动作分布，$r$为回报
+
+\
+
+为了增加模型的探索能力$\tmop{exploration}$,
+使得模型能够更鲁棒和适应不同场景，我们考虑设计这个最大化的目标不仅仅最大化获得的回报，还要考虑策略的分布特征，即最大化每一步的熵值，其中$\alpha$是控温系数，用来调节熵的相对重要性。
+\[ \pi^{\ast}_{\tmop{MaxEnt}} = \tmop{argmax}_{\pi} \sum_t \mathbb{E}_{(s_t,
+   a_t) \sim \rho_{\pi}} [r (a_t, s_t) + \alpha H (\pi (\cdot | \nobracket
+   s_t))] \]
+这里$\pi_{\tmop{MaxEnt}}^{\ast}$为考虑熵的最大化之后的最优策略，其中熵的定义是
+\[ (\pi (\cdot | \nobracket s_t)) = - \int_{\mathcal{A}} \pi (a_t | \nobracket
+   s_t) \log \pi (a_t | \nobracket s_t) \tmop{da}_t =\mathbb{E}_{a_t \sim
+   \rho_{\pi} (\cdot , s_t)} [- \log (\pi (a_t | \nobracket s_t))] \]
+
+\section{Soft Q-function and Soft Value-function}
+
+我们假设我们想要寻找的策略分布以如下形式出现
+\[ \pi \propto \exp (-\mathcal{E} (s_t, a_t)) \]
+并且假设能量函数形式与Q function成反比
+\[ \mathcal{E} (s_t, a_t) = - \frac{1}{\alpha} Q_{\tmop{soft}} (s_t, a_t) \]
+这样一来，动作的选择与Q的值相关，Q越大概率越大，满足我们的要求。
+
+\
+
+由于回报函数中有了最大熵的加入，作者提出了该形式下对应的Q
+function 与 Value function
+\[ \begin{array}{l}
+     Q_{Soft}^{\ast} = r_t +\mathbb{E}_{(s_{t + 1}, \cdot) \sim \rho_{\pi}}
+     \left[ \sum_{l = 1}^{\infty} \gamma^l  (r_{t + l} + \alpha H (\pi_{M
+     \alpha xEnt}^{\ast}  (\cdot \mid s_{t + l}))) \right]\\
+     V_{Soft}^{\ast} = \alpha \ast \log \int_{\mathcal{A}} \exp \left(
+     \frac{1}{\alpha} Q_{Soft}^{\ast} (s_t, a') \right) da'
+   \end{array} \]
+
+
+并且作者证明上述定义的Soft Q function与Soft Value
+function满足Bellman equation
+\[ Q^{\ast}_{\tmop{soft}} (s_t, a_t) = r_t + \gamma \mathbb{E}_{s_{t + 1} \sim
+   p _s} [V_{\tmop{soft}}^{\ast} (s_{t + 1})] \]
+\begin{theorem}
+  根据上述定义的Soft Q function与Soft Value
+  function，最优的策略为
+  \[ \pi^{\ast}_{\tmop{MaxEnt}} (a_t | \nobracket s_t) = \exp \left(
+     \frac{1}{\alpha} (Q^{\ast}_{\tmop{soft}} (s_t, a_t) -
+     V_{\tmop{soft}}^{\ast} (s_t)) \right) \]
+  
+\end{theorem}
+
+\section{Training via Soft Q-learning}
+
+\begin{theorem}
+  (Soft Q-iteration). 如果$Q_{\tmop{soft}}$与$V_{\tmop{soft}}$
+  有界，且$\int_{\mathcal{A}} \exp \left( \frac{1}{\alpha} Q_{Soft}^{\ast}
+  (s_t, a') \right)$积分对所有$s_t$有界，且$Q_{\tmop{soft}}^{\ast} <
+  \infty$存在。则以下不动点迭代收敛于$Q_{\tmop{soft}}^{\ast},
+  V_{Soft}^{\ast}$
+  \[ \begin{aligned}
+       Q_{\text{soft }} (\mathbf{s}_t, \mathbf{a}_t) & \leftarrow r_t + \gamma
+       \mathbb{E}_{\mathbf{s}_{t + 1} \sim p_{\mathbf{s}}} \left[
+       V_{\text{soft }} (\mathbf{s}_{t + 1}) \right], \forall \mathbf{s}_t,
+       \mathbf{a}_t\\
+       V_{\text{soft }} (\mathbf{s}_t) & \leftarrow \alpha \log
+       \int_{\mathcal{A}} \exp \left( \frac{1}{\alpha} Q_{\text{soft }}
+       (\mathbf{s}_t, \mathbf{a}') \right) d \mathbf{a}', \forall \mathbf{s}_t
+     \end{aligned} \]
+\end{theorem}
+
+\subsection{Soft Q learning}
+
+我们使用神经网络来参数化soft Q
+function,并且引入重要性采样改写Soft Value function的定义
+\[ V_{\mathrm{soft}}^{\theta} (\mathbf{s}_t) = \alpha \log
+   \mathbb{E}_{q_{\mathbf{a}'}} \left[ \frac{\exp \left( \frac{1}{\alpha}
+   Q_{\mathrm{soft}}^{\theta} (\mathbf{s}_t, \mathbf{a}')
+   \right)}{q_{\mathbf{a}'} (\mathbf{a}')} \right] \]
+其中$q_{a'}$是action space上的任意分布，进而的到 soft Q function
+\[ Q_{\tmop{soft}}^{\bar{\theta}} (s_t, a_t) = r_t + \gamma \mathbb{E}_{s_{t +
+   1} \sim p_s} [V_{\tmop{soft}}^{\bar{\theta}} (s_{t + 1})] \]
+这里用了double Q的想法，delay update Q
+
+\
+
+那么我们可以将soft Q-iteration 表示为以下minimization问题
+\[ J_Q (\theta) =\mathbb{E}_{s_t \sim q_{g_t}, a_t \sim q_{g_t}}  \left[
+   \frac{1}{2}  (\hat{Q}_{soft}^{\bar{\theta}} (s_t, a_t) - Q_{soft}^{\theta}
+   (s_t, a_t))^2 \right] \]
+
+\subsection{采样Q值}
+
+对于离散动作空间我们可以直接通过状态输入得到每个动作的Q，但是对于连续动作空间就不行了。这个时候我们需要一个采样器。
+
+我们利用一个神经网络$a_t = f^{\phi} (\xi ;
+s_t)$来选择动作，其中$\xi$是一个高斯噪声。为了使我们的策略分布与当前我们认为的最佳分布接近，我们利用KL散度来约束两者尽量接近
+\[ J_{\pi} (\phi ; s_t) = D_{KL}  \left( \pi^{\phi}  (\cdot \mid s_t) \| \exp
+   \left( \frac{1}{\alpha}  (Q_{soft}^{\theta} (s_t, \cdot) -
+   V_{soft}^{\theta}) \right) \right) \]
+这个KL散度可以利用stein variational gradient descent计算,
+下降方向为
+\[ \begin{aligned}
+     \Delta f^{\phi} (\cdot ; \mathbf{s}_t) = & \mathbb{E}_{\mathbf{a}_t \sim
+     \pi^{\phi}} \left[ \left. \kappa (\mathbf{a}_t, f^{\phi} (\cdot ;
+     \mathbf{s}_t)) \nabla_{\mathbf{a}'} Q_{\text{soft }}^{\theta}
+     (\mathbf{s}_t, \mathbf{a}') \right|_{\mathbf{a}' = \mathbf{a}_t}
+     \right.\\
+     & \nobracket + \nobracket \alpha \nabla_{\mathbf{a}'} \kappa
+     (\mathbf{a}', f^{\phi} (\cdot ; \mathbf{s}_t)) |_{\mathbf{a}' =
+     \mathbf{a}_t}]
+   \end{aligned} \]
+更新值为
+\[ \frac{\partial J_{\pi} (\phi ; \mathbf{s}_t)}{\partial \phi} \propto
+   \mathbb{E}_{\xi}  \left[ \Delta f^{\phi} (\xi ; \mathbf{s}_t)
+   \frac{\partial f^{\phi} (\xi ; \mathbf{s}_t)}{\partial \phi} \right] \]
+
+\subsection{算法}
+
+\raisebox{0.0\height}{\includegraphics[width=12.581250819887185cm,height=20.248425816607636cm]{soft
+q learning-1.pdf}}
+
+\end{CJK*}
+\end{document}
